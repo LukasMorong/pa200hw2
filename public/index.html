@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My TODO</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 760px; margin: 32px auto; padding: 0 16px; }
+    h1 { margin: 0 0 12px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .row { display: flex; gap: 8px; }
+    input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+    button { padding: 10px 14px; border: 1px solid #ccc; background: #f8f8f8; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #f0f0f0; }
+    ul { list-style: none; padding: 0; margin: 12px 0 0; }
+    li { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #eee; }
+    .done { text-decoration: line-through; opacity: 0.7; }
+    .muted { color: #666; font-size: 12px; }
+    .actions { display:flex; gap:6px; }
+    .empty { padding: 16px; text-align: center; color: #666; }
+    .error { color: #b00020; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>My TODO</h1>
+  <div class="card">
+    <div class="row">
+      <input id="todo-input" type="text" placeholder="Add a new task…" />
+      <button id="add-btn">Add</button>
+      <button id="refresh-btn" title="Reload list">↻</button>
+    </div>
+    <div id="error" class="error" style="display:none;"></div>
+    <ul id="list"></ul>
+    <div id="empty" class="empty" style="display:none;">No items yet.</div>
+    <div class="muted">Tip: click “Toggle” to mark done/undone.</div>
+  </div>
+
+  <script>
+    const listEl = document.getElementById('list');
+    const emptyEl = document.getElementById('empty');
+    const inputEl = document.getElementById('todo-input');
+    const addBtn = document.getElementById('add-btn');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const errorEl = document.getElementById('error');
+
+    async function api(path, options) {
+      errorEl.style.display = 'none';
+      try {
+        const res = await fetch(path, {
+          headers: { 'Content-Type': 'application/json' },
+          ...options
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || ('HTTP ' + res.status));
+        }
+        if (res.status !== 204) return await res.json();
+        return null;
+      } catch (e) {
+        errorEl.textContent = 'Error: ' + (e.message || e);
+        errorEl.style.display = 'block';
+        throw e;
+      }
+    }
+
+    function render(items) {
+      listEl.innerHTML = '';
+      if (!items || items.length === 0) {
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+      items.sort((a,b) => Number(a.rowKey) - Number(b.rowKey));
+      for (const it of items) {
+        const li = document.createElement('li');
+        const left = document.createElement('div');
+        const right = document.createElement('div');
+        right.className = 'actions';
+
+        const text = document.createElement('span');
+        text.textContent = it.text || '';
+        if (it.done) text.className = 'done';
+
+        left.appendChild(text);
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.textContent = 'Toggle';
+        toggleBtn.onclick = async () => {
+          await api(`/api/todos/${encodeURIComponent(it.rowKey)}/toggle`, { method: 'POST' });
+          await load();
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.onclick = async () => {
+          await api(`/api/todos/${encodeURIComponent(it.rowKey)}`, { method: 'DELETE' });
+          await load();
+        };
+
+        right.appendChild(toggleBtn);
+        right.appendChild(delBtn);
+
+        li.appendChild(left);
+        li.appendChild(right);
+        listEl.appendChild(li);
+      }
+    }
+
+    async function load() {
+      const data = await api('/api/todos');
+      render(data);
+    }
+
+    async function add() {
+      const text = (inputEl.value || '').trim();
+      if (!text) return;
+      await api('/api/todos', { method: 'POST', body: JSON.stringify({ text }) });
+      inputEl.value = '';
+      await load();
+    }
+
+    addBtn.onclick = add;
+    refreshBtn.onclick = load;
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+
+    load();
+  </script>
+</body>
+</html>
